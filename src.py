@@ -82,8 +82,7 @@ class GAN:
         conv3 = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=1)(conv3)
         conv3 = tf.keras.layers.LeakyReLU()(conv3)
 
-        bottleneck = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=1, activation='relu', padding='same')(
-            conv3)
+        bottleneck = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=1, activation='relu', padding='same')(conv3)
 
         concat_1 = tf.keras.layers.Concatenate()([bottleneck, conv3])
         conv_up_3 = tf.keras.layers.Conv2DTranspose(128, kernel_size=(3, 3), strides=1, activation='relu')(concat_1)
@@ -153,9 +152,6 @@ class GAN:
             gen_loss = self.generator_loss(generated_images, real_y)
             disc_loss = self.discriminator_loss(real_output, generated_output)
 
-        # tf.keras.backend.print_tensor(tf.keras.backend.mean(gen_loss))
-        # tf.keras.backend.print_tensor(gen_loss + disc_loss)
-
         gradients_of_generator = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
         gradients_of_discriminator = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
         self.generator_optimizer.apply_gradients(zip(gradients_of_generator, self.generator.trainable_variables))
@@ -174,13 +170,9 @@ class GAN:
 
     def generate(self, test_path, output_path):
         for img_name in os.listdir(test_path):
-            try:
-                img = cv2.imread(os.path.join(test_path, img_name))
-                predicted_img = np.array(self.generator([img]))[0] * 255
-                cv2.imwrite(output_path + '/{}.jpg'.format(img_name), predicted_img)
-            except:
-                pass
-
-
-dataset = Dataset(x_path='x.npy', y_path='y.npy', img_size=100, resize_required=False, load=True)
-gan = GAN(dataset)
+          print(img_name)
+          img = np.expand_dims(np.array(cv2.imread(os.path.join(test_path, img_name))), axis=0)
+          predicted_img = np.array(self.generator([img]))[0]
+          cv2.imwrite(os.path.join(output_path, img_name), predicted_img)
+          print(os.path.join(output_path, img_name))
+            
