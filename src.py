@@ -16,6 +16,7 @@ class Dataset:
         self.resize_required = resize_required
         self.IMG_SIZE = img_size
         self.load = load
+        self.make_synthetic_dataset()
 
     def make_synthetic_dataset(self):
         X = []
@@ -38,10 +39,10 @@ class Dataset:
                     img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
                 img = np.array(img) / 255
                 Y.append(img)
-        X = tf.convert_to_tensor(np.array(X))
-        Y = tf.convert_to_tensor(np.array(Y))
-        self.dataset = tf.data.Dataset.from_tensor_slices((X, Y))
-        self.dataset = self.dataset.batch(self.batch_size)
+            X = tf.convert_to_tensor(np.array(X))
+            Y = tf.convert_to_tensor(np.array(Y))
+            self.dataset = tf.data.Dataset.from_tensor_slices((X, Y))
+            self.dataset = self.dataset.batch(self.batch_size)
 
 
 class GAN:
@@ -162,7 +163,7 @@ class GAN:
 
     def fit(self):
         for epoch in tqdm(range(self.epochs)):
-            for (x, y) in self.dataset:
+            for (x, y) in self.dataset.dataset:
                 self.train_step(x, y)
         self.generator.save('generator_model')
         self.discriminator.save('discriminator_model')
@@ -179,3 +180,7 @@ class GAN:
                 cv2.imwrite(output_path + '/{}.jpg'.format(img_name), predicted_img)
             except:
                 pass
+
+
+dataset = Dataset(x_path='x.npy', y_path='y.npy', img_size=100, resize_required=False, load=True)
+gan = GAN(dataset)
