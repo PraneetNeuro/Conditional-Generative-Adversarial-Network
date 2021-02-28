@@ -2,11 +2,30 @@ import tensorflow as tf
 import numpy as np
 import os
 import cv2
+import random
 from tqdm import tqdm
 
 
+class Helpers:
+    @staticmethod
+    def random_hue(img):
+        return tf.image.random_hue(img, random.randint(0, 1) * 0.5)
+
+    @staticmethod
+    def random_saturation(img):
+        return tf.image.random_saturation(img, 5, 10)
+
+    @staticmethod
+    def random_brightness(img):
+        return  tf.image.random_brightness(img, 0.2)
+
+    @staticmethod
+    def random_contrast(img):
+        return tf.image.random_contrast(img, 0.2, 0.5)
+
+
 class Dataset:
-    def __init__(self, x_path, y_path, img_size, resize_required, load, batch_size=64):
+    def __init__(self, x_path, y_path, img_size, resize_required, load, batch_size=128):
         self.x_path = x_path
         self.y_path = y_path
         self.x = np.array([])
@@ -33,7 +52,6 @@ class Dataset:
                     img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
                 img = np.array(img) / 255
                 X.append(img)
-            for img_name in tqdm(os.listdir(self.y_path)):
                 img = cv2.imread(os.path.join(self.y_path, img_name))
                 if self.resize_required:
                     img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
@@ -44,11 +62,23 @@ class Dataset:
             self.dataset = tf.data.Dataset.from_tensor_slices((X, Y))
             self.dataset = self.dataset.batch(self.batch_size)
 
+    def augment(self, output_path):
+        for img in os.listdir(self.x_path):
+            try:
+                base_img = tf.convert_to_tensor(cv2.imread(os.path.join(self.x_path, img)))
+                augmentation_functions = [tf.image.flip_up_down, tf.image.flip_left_right,
+                                          Helpers.random_contrast, Helpers.random_hue, Helpers.random_brightness,
+                                          Helpers.random_saturation]
+                for i in range(len(augmentation_functions)):
+                    aug_img = augmentation_functions[i](base_img)
+                    cv2.imwrite('{}'.format(os.path.join(output_path, '{}_{}'.format(i, img))), np.float32(aug_img))
+            except Exception as e:
+                print(e)
+
 
 class GAN:
-    def __init__(self, dataset, epochs=20):
-        self.img_size = dataset.IMG_SIZE
-        self.dataset = dataset
+    def __init__(self, dataset=None, epochs=20):
+        self.img_size = 100
         self.generator = tf.keras.models.Model()
         self.discriminator = tf.keras.models.Model()
         self.cross_entropy = tf.keras.losses.BinaryCrossentropy()
@@ -57,10 +87,12 @@ class GAN:
         self.discriminator_optimizer = tf.keras.optimizers.Adam(0.0005)
         self.epochs = epochs
         self.initialize_model()
-        self.fit()
+        if dataset != None:
+            self.dataset = dataset
+            self.fit()
 
     def get_generator_model(self):
-        inputs = tf.keras.layers.Input(shape=(self.img_size, self.img_size, 3))
+        inputs = tf.keras.layers.Input(shape=(100, 100, 3))
         conv1 = tf.keras.layers.Conv2D(16, kernel_size=(5, 5), strides=1)(inputs)
         conv1 = tf.keras.layers.LeakyReLU()(conv1)
         conv1 = tf.keras.layers.Conv2D(32, kernel_size=(3, 3), strides=1)(conv1)
@@ -82,7 +114,8 @@ class GAN:
         conv3 = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=1)(conv3)
         conv3 = tf.keras.layers.LeakyReLU()(conv3)
 
-        bottleneck = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=1, activation='relu', padding='same')(conv3)
+        bottleneck = tf.keras.layers.Conv2D(128, kernel_size=(3, 3), strides=1, activation='relu', padding='same')(
+            conv3)
 
         concat_1 = tf.keras.layers.Concatenate()([bottleneck, conv3])
         conv_up_3 = tf.keras.layers.Conv2DTranspose(128, kernel_size=(3, 3), strides=1, activation='relu')(concat_1)
@@ -124,15 +157,15 @@ class GAN:
         self.discriminator = tf.keras.models.Sequential(layers)
 
     def discriminator_loss(self, real_output, fake_output):
-        # real_loss = self.cross_entropy(
-        #     tf.ones_like(real_output) - tf.random.uniform(shape=real_output.shape, maxval=0.1),
-        #     real_output)
-        # fake_loss = self.cross_entropy(
-        #     tf.zeros_like(fake_output) + tf.random.uniform(shape=fake_output.shape, maxval=0.1),
-        #     fake_output)
-        real_loss = self.cross_entropy(tf.ones_like(real_output), real_output)
-        fake_loss = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
-        total_loss = real_loss + fake_loss
+        real_loss = self.cross_entropy(
+            tf.ones_like(real_output) - tf.random.uniform(shape=real_output.shape, maxval=0.1),
+            real_output)
+        fake_loss = self.cross_entropy(
+            tf.zeros_like(fake_output) + tf.random.uniform(shape=fake_output.shape, maxval=0.1),
+            fake_output)
+#         real_loss = self.cross_entropy(tf.ones_like(real_output), real_output)
+#         fake_loss = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
+#         total_loss = real_loss + fake_loss
         return total_loss
 
     def generator_loss(self, fake_output, real_y):
@@ -155,24 +188,46 @@ class GAN:
         gradients_of_generator = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
         gradients_of_discriminator = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
         self.generator_optimizer.apply_gradients(zip(gradients_of_generator, self.generator.trainable_variables))
-        self.discriminator_optimizer.apply_gradients(zip(gradients_of_discriminator, self.discriminator.trainable_variables))
+        self.discriminator_optimizer.apply_gradients(
+            zip(gradients_of_discriminator, self.discriminator.trainable_variables))
 
     def fit(self):
-        for epoch in tqdm(range(self.epochs)):
-            for (x, y) in self.dataset.dataset:
+        for epoch in range(self.epochs):
+            for (x, y) in tqdm(self.dataset.dataset):
                 self.train_step(x, y)
-        self.generator.save('generator_model')
-        self.discriminator.save('discriminator_model')
+        self.generator.save('g_model')
+        self.discriminator.save('d_model')
 
     def load_models(self):
-        self.generator = tf.keras.models.load_model('generator_model')
-        self.discriminator = tf.keras.models.load_model('discriminator_model')
+        self.generator = tf.keras.models.load_model('g_model')
+        self.discriminator = tf.keras.models.load_model('d_model')
 
     def generate(self, test_path, output_path):
         for img_name in os.listdir(test_path):
-          print(img_name)
-          img = np.expand_dims(np.array(cv2.imread(os.path.join(test_path, img_name))), axis=0)
-          predicted_img = np.array(self.generator([img]))[0]
-          cv2.imwrite(os.path.join(output_path, img_name), predicted_img)
-          print(os.path.join(output_path, img_name))
-            
+            print(img_name)
+            img = np.expand_dims(np.array(cv2.imread(os.path.join(test_path, img_name))), axis=0)
+            predicted_img = np.array(self.generator([img]))[0]
+            cv2.imwrite(os.path.join(output_path, img_name), predicted_img)
+            print(os.path.join(output_path, img_name))
+
+    def generate_img(self, img_path, output_path):
+        img = np.expand_dims(np.array(cv2.imread(img_path)), axis=0)
+        predicted_img = np.array(self.generator([img]))[0]
+        cv2.imwrite(os.path.join(output_path), predicted_img)
+
+    def inference(self, images_path, save_path, ground_truth_path=None):
+        if ground_truth_path is not None:
+            for img_n in tqdm(os.listdir(images_path)):
+                try:
+                    img = cv2.imread(os.path.join(images_path, img_n))
+                    img_ = cv2.resize(img, (100, 100))
+                    img_ = np.array(img_) / 255
+                    img = np.expand_dims(img_, 0)
+                    output = np.array(self.generator.predict([np.array(img)])[0])
+                    target = cv2.imread(os.path.join(ground_truth_path, img_n))
+                    target = np.array(cv2.resize(target, (100, 100)))
+                    res = np.concatenate((img_ * 255, output * 255, target), axis=1)
+                    cv2.imwrite('{}/generated_{}.jpg'.format(save_path, os.path.splitext(img_n)[0]), res)
+                    print('Gen')
+                except Exception as e:
+                    print(e)
