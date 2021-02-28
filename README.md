@@ -15,6 +15,7 @@ gan.generate('<PATH OF FOLDER CONTAINING TEST IMGS>', '<OUTPUT_DIR>')
 import src
 
 dataset = Dataset(x_path='<SRC_IMAGES / SRC_NPY>', y_path='<TARGET_IMAGES / TARGET_NPY>', img_size=<INTEGER REPRESENTING DIM OF SQUARE IMG>, resize_required=<True / FALSE>, load=<True / False>)
+#Input by default taken from x_path (SRC_IMAGES) from the dataset object
 dataset.augment(<PATH OF OUTPUT DIRECTORY>)
 ```
 
