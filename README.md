@@ -19,6 +19,6 @@ dataset = Dataset(x_path='<SRC_IMAGES / SRC_NPY>', y_path='<TARGET_IMAGES / TARG
 dataset.augment(<PATH OF OUTPUT DIRECTORY>)
 ```
 
-## Examples (Sketch -> Photorealistic)
+## Examples (Sketch to Photorealistic)
 ![Example 1](https://github.com/PraneetNeuro/Conditional-Generative-Adversarial-Network/blob/main/2783.jpg?raw=true)
 ![Example 2](https://github.com/PraneetNeuro/Conditional-Generative-Adversarial-Network/blob/main/testing.jpg?raw=true)
