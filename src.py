@@ -2,8 +2,28 @@ import tensorflow as tf
 import numpy as np
 import os
 import cv2
+import datetime
 import random
 from tqdm import tqdm
+
+tf.config.run_functions_eagerly(True)
+
+
+class TensorLog:
+
+    def __init__(self):
+        self.logFile = 'tensor_report_{}.csv'.format(datetime.datetime.now())
+        open(self.logFile, 'w+').close()
+        print('Logger initialised with {}'.format(self.logFile))
+
+    @staticmethod
+    def log(epoch, generator_loss, discriminator_loss):
+        logToWrite = "{},{},{}\n".format(epoch, generator_loss, discriminator_loss)
+        return logToWrite
+
+    def writeLogs(self, epoch, generator_loss, discriminator_loss):
+        with open(self.logFile, 'a') as logUtil:
+            logUtil.write(TensorLog.log(epoch, generator_loss, discriminator_loss))
 
 
 class Helpers:
@@ -17,7 +37,7 @@ class Helpers:
 
     @staticmethod
     def random_brightness(img):
-        return  tf.image.random_brightness(img, 0.2)
+        return tf.image.random_brightness(img, 0.2)
 
     @staticmethod
     def random_contrast(img):
@@ -47,16 +67,19 @@ class Dataset:
             self.dataset = self.dataset.batch(self.batch_size)
         else:
             for img_name in tqdm(os.listdir(self.x_path)):
-                img = cv2.imread(os.path.join(self.x_path, img_name))
-                if self.resize_required:
-                    img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
-                img = np.array(img) / 255
-                X.append(img)
-                img = cv2.imread(os.path.join(self.y_path, img_name))
-                if self.resize_required:
-                    img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
-                img = np.array(img) / 255
-                Y.append(img)
+                try:
+                    img = cv2.imread(os.path.join(self.x_path, img_name))
+                    if self.resize_required:
+                        img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
+                    img = np.array(img) / 255
+                    X.append(img)
+                    img = cv2.imread(os.path.join(self.y_path, img_name))
+                    if self.resize_required:
+                        img = cv2.resize(img, (self.IMG_SIZE, self.IMG_SIZE))
+                    img = np.array(img) / 255
+                    Y.append(img)
+                except:
+                    pass
             X = tf.convert_to_tensor(np.array(X))
             Y = tf.convert_to_tensor(np.array(Y))
             self.dataset = tf.data.Dataset.from_tensor_slices((X, Y))
@@ -89,6 +112,7 @@ class GAN:
         self.initialize_model()
         if dataset != None:
             self.dataset = dataset
+            self.logger = TensorLog()
             self.fit()
 
     def get_generator_model(self):
@@ -163,8 +187,8 @@ class GAN:
         fake_loss = self.cross_entropy(
             tf.zeros_like(fake_output) + tf.random.uniform(shape=fake_output.shape, maxval=0.1),
             fake_output)
-#         real_loss = self.cross_entropy(tf.ones_like(real_output), real_output)
-#         fake_loss = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
+        #         real_loss = self.cross_entropy(tf.ones_like(real_output), real_output)
+        #         fake_loss = self.cross_entropy(tf.zeros_like(fake_output), fake_output)
         total_loss = real_loss + fake_loss
         return total_loss
 
@@ -177,13 +201,14 @@ class GAN:
         self.get_discriminator_model()
 
     @tf.function
-    def train_step(self, input_x, real_y):
+    def train_step(self, input_x, real_y, epoch):
         with tf.GradientTape() as gen_tape, tf.GradientTape() as disc_tape:
             generated_images = self.generator(input_x, training=True)
             real_output = self.discriminator(real_y, training=True)
             generated_output = self.discriminator(generated_images, training=True)
             gen_loss = self.generator_loss(generated_images, real_y)
             disc_loss = self.discriminator_loss(real_output, generated_output)
+            self.logger.writeLogs(epoch, tf.keras.backend.eval(gen_loss), tf.keras.backend.eval(disc_loss))
 
         gradients_of_generator = gen_tape.gradient(gen_loss, self.generator.trainable_variables)
         gradients_of_discriminator = disc_tape.gradient(disc_loss, self.discriminator.trainable_variables)
@@ -194,7 +219,7 @@ class GAN:
     def fit(self):
         for epoch in range(self.epochs):
             for (x, y) in tqdm(self.dataset.dataset):
-                self.train_step(x, y)
+                self.train_step(x, y, epoch)
         self.generator.save('g_model')
         self.discriminator.save('d_model')
 
@@ -231,3 +256,7 @@ class GAN:
                     print('Gen')
                 except Exception as e:
                     print(e)
+
+
+dataset = Dataset(x_path='source', y_path='target', img_size=100, resize_required=True, load=False)
+gan = GAN(dataset)
